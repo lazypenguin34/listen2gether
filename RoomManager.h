@@ -57,7 +57,7 @@ public:
     /*
      * Culls rooms with more than 10 minutes of inactivity
      */
-    void inspectRooms() {
+    void cullInactiveRooms() {
         std::time_t currTime = std::time(nullptr);
 
         for (const std::pair<const int, Room>& roomPair: rooms) {
