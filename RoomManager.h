@@ -1,42 +1,65 @@
 #ifndef ROOMMANAGER_H
 #define ROOMMANAGER_H
-#include <ctime>
 #include <string>
+#include <random>
 #include <unordered_map>
+#include <ctime>
 
 struct Room {
     const std::string hostPlatform;
     int positionMs;
     std::string artistName;
     std::string trackName;
+    std::time_t lastInspectionTimestamp;
 };
 
 class RoomManager {
 private:
-    std::unordered_map<const int, Room> rooms;
+    std::unordered_map<int, Room> rooms;
+    std::pair<int, int> roomCodeRange; // inclusive
 public:
-    // Blank constructor
-    RoomManager() : rooms() {}
+    // Constructor
+    explicit RoomManager(const std::pair<int, int> &roomCodeRange) : rooms(), roomCodeRange(roomCodeRange) {}
 
     /*
      * Creates a room with a unique, random room code
+     * Returns the roomcode
      */
-    void createRoom(std::string& hostPlatform, std::string& artistName, std::string& trackName) {
+    int createRoom(const std::string& hostPlatform, const std::string& artistName, const std::string& trackName) {
         // Generate a random room code
-        srand((unsigned) time(NULL));
+        static std::random_device rd;
+        static std::mt19937 gen(rd());
+        std::uniform_int_distribution<> dist(roomCodeRange.first, roomCodeRange.second);
+
         int roomCode;
         do {
-            roomCode = rand() % 10000; // [0, 9999]
+            roomCode = dist(gen);
         } while (rooms.find(roomCode) != rooms.end());
 
-        rooms.emplace(roomCode, Room{std::move(hostPlatform), 0, std::move(artistName), std::move(trackName)});
+        rooms.emplace(roomCode, Room{hostPlatform, 0, artistName, trackName, std::time(nullptr)});
+        return roomCode;
     }
 
     void removeRoom(const int roomCode) {
         rooms.erase(roomCode);
     }
+
+    Room& getRoom(const int roomCode) {
+        return rooms.at(roomCode);
+    }
+
+    void inspectRooms() {
+        std::time_t currTime = std::time(nullptr);
+
+        for (const std::pair<const int, Room>& roomPair: rooms) {
+            Room room = roomPair.second;
+            long timeDifference = currTime - room.lastInspectionTimestamp;
+
+            if (timeDifference > 600) { // 10 minutes
+                removeRoom(roomPair.first);
+            }
+        }
+    }
 };
-
-
 
 #endif //ROOMMANAGER_H
