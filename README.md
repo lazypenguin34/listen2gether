@@ -5,5 +5,5 @@ This repository is the source code for http://listenalong.ca/
 [<img alt="lazypenguin34" src="https://github.com/lazypenguin34.png?size=120" width="120px"/>](https://github.com/lazypenguin34)
 [<img alt="simburto" src="https://github.com/simburto.png?size=120" width="120px"/>](https://github.com/simburto)
 ## Dependencies
-### On Linux
+### On ArchLinux
 Download `asio` and `crow` from pacman and the AUR respectively
