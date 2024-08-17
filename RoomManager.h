@@ -1,5 +1,6 @@
 #ifndef ROOMMANAGER_H
 #define ROOMMANAGER_H
+
 #include <string>
 #include <random>
 #include <unordered_map>
@@ -10,7 +11,7 @@ struct Room {
     int positionMs;
     std::string artistName;
     std::string trackName;
-    std::time_t lastInspectionTimestamp;
+    std::time_t lastActionTimestamp;
 };
 
 class RoomManager {
@@ -48,14 +49,23 @@ public:
         return rooms.at(roomCode);
     }
 
+    void setPositionMs(const int roomCode, const int positionMs) {
+        rooms[roomCode].positionMs = positionMs;
+        rooms[roomCode].lastActionTimestamp = std::time(nullptr);
+    }
+
+    /*
+     * Culls rooms with more than 10 minutes of inactivity
+     */
     void inspectRooms() {
         std::time_t currTime = std::time(nullptr);
 
         for (const std::pair<const int, Room>& roomPair: rooms) {
             Room room = roomPair.second;
-            long timeDifference = currTime - room.lastInspectionTimestamp;
+            long timeDifference = currTime - room.lastActionTimestamp;
+            room.lastActionTimestamp = currTime;
 
-            if (timeDifference > 600) { // 10 minutes
+            if (timeDifference > 600) { // 600 seconds = 10 minutes
                 removeRoom(roomPair.first);
             }
         }
