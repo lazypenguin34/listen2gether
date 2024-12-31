@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Now Playing</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+        href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap"
+        rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css">
+  </head>
+
+  <body>
+
+<!--  <div id="selectMode">-->
+<!--      <input type="text" id="roomcode" placeholder="Enter Room Code">-->
+<!--      <button onClick="handleHosting()"></button>-->
+<!--  </div>-->
+
+  <div id="login">
+        <h1>How would you like to login?</h1>
+        <a href="/spotifyLogin" class="btn btn-primary">Log in with Spotify (Premium Required)</a>
+        </br>
+        <a href="/youtubeLogin" class="btn btn-primary">Log in with Youtube Music</a>
+  </div>
+
+
+  <div id="nowPlaying" hidden>
+      <div class="left-div">
+          <img
+                  id="albumArt"
+                  src="https://www.udiscovermusic.com/wp-content/uploads/2017/10/Kendrick-Lamar-Good-Kid-Maad-City-1.jpg"
+                  width="200"
+                  height="200"
+                  alt="Album cover of Kendrick Lamar - Good Kid, M.A.A.D City"
+          />
+      </div>
+
+      <div class="right-div">
+          <p id="artistName">Kendrick Lamar</p>
+          <p id="trackName">Money Trees</p>
+          <p id="timestamp">0:00 / 0:00</p>
+      </div>
+      <script src="index.js"></script>
+  </body>
+</html>
+
