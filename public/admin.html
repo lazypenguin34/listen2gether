@@ -14,14 +14,18 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<div>
     <h1>listen2gether admin panel</h1>
 
-    <table>
+    <table style="border-spacing: 20px;">
         <thead>
             <tr>
                 <th>room code</th>
-                <th>host platform</th>
-                <th>currently playing</th>
+                <th>host access token</th>
+                <th>host refresh token</th>
+                <th>track name</th>
+                <th>position (ms)</th>
+                <th>album art</th>
                 <th>status</th>
             </tr>
         </thead>
@@ -29,5 +33,8 @@
             <!-- Data will appear here -->
         </tbody>
     </table>
+
+    <script src="admin.js"></script>
+</div>
 </body>
 </html>
