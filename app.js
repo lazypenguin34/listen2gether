@@ -95,7 +95,6 @@ async function updateRooms() {
     }
 }
 
-
 app.use(express.static(path.join(__dirname, 'public')))
     .use(cors())
     .use(cookieParser());
@@ -226,7 +225,7 @@ app.get('/getRooms', (req, res) => {
 
 setInterval(updateRooms, ROOM_UPDATE_INTERVAL_MS);
 
-app.listen(port, () => {
-    console.log(`Server is running at http://localhost:${port}`);
+app.listen(port, '0.0.0.0', () => {
+    console.log(`Server is running at http://0.0.0.0:${port}`);
 });
 
