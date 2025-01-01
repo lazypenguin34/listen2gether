@@ -1,4 +1,4 @@
-async function getRooms() {
+async function updateTable() {
     const res = await fetch('http://localhost:8888/getRooms');
     if (!res.ok) throw new Error('Failed to fetch rooms');
     const data = await res.json();
@@ -25,4 +25,4 @@ async function getRooms() {
     });
 }
 
-window.addEventListener('DOMContentLoaded', getRooms);
+setInterval(updateTable)

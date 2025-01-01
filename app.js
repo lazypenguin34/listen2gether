@@ -32,9 +32,6 @@ const ydb = new Map() // youtube database
 const MAX_ROOM_CODE = 9999;
 const ROOM_UPDATE_INTERVAL_MS = 2000;
 
-// FIXME
-sdb.set(1, new SpotifyRoom(1, 'token', 'refresh', 'these walls', 'playing'));
-
 function generateRoomCode() {
     if (sdb.size + ydb.size >= MAX_ROOM_CODE) {
         throw new Error('Exceeded the maximum allowed number of rooms');
@@ -80,20 +77,24 @@ async function updateSpotifyRoom(roomCode) {
     room.positionMs = data.progress_ms;
     room.status = 'playing';
     room.albumArt = data.item.album.images[0].url;
-    console.log('Updated room: ', room);
+    console.log('Updated room: ', roomCode);
 }
 
 // Updates rooms concurrently, but waits for all rooms to be updated before finishing the function
 async function updateRooms() {
-    // TODO: update youtube rooms
     const spotifyRoomCodes = Array.from(sdb.keys());
 
-    const updatePromises = spotifyRoomCodes.map((roomCode) => {
-        return updateSpotifyRoom(roomCode);  // Returns a promise for each room update
-    });
+    try {
+        const updatePromises = spotifyRoomCodes.map((roomCode) => {
+            return updateSpotifyRoom(roomCode);  // Returns a promise for each room update
+        });
 
-    await Promise.all(updatePromises);
+        await Promise.all(updatePromises);
+    } catch (error) {
+        console.error('Error updating rooms:', error);
+    }
 }
+
 
 app.use(express.static(path.join(__dirname, 'public')))
     .use(cors())
