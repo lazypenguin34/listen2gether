@@ -62,7 +62,17 @@ async function authenticateYTMD() {
         console.error("Socket.IO connection error:", error);
     });
 
-    socket.on("state-update", (state) => {
-
+    socket.on("state-update", async (state) => {
+        const res = await fetch('http://0.0.0.0:8888/updateYTRoom', {
+            method: 'POST',
+            body: JSON.stringify({
+                status: state.player.trackState === 1 ? 'playing' : 'paused',
+                positionMs: state.player.videoProgress * 1000, // FIXME: Check if this is ms
+                adPlaying: state.player.adPlaying,
+                trackName: state.video.title,
+                albumArt: state.video.thumbnails[0].url,
+            })
+        });
+        if (!res.ok) throw new Error('Failed to update room');
     });
 }

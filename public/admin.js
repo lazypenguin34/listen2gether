@@ -4,13 +4,15 @@ async function updateTable() {
     const data = await res.json();
     console.log(data);
 
-    const tableBody = document.getElementById('roomsTable');
+    const spotifyTableBody = document.getElementById('spotifyRoomsTable');
+    const ytTableBody = document.getElementById('ytRoomsTable');
 
     // Clear existing rows
-    tableBody.innerHTML = '';
+    spotifyTableBody.innerHTML = '';
+    ytTableBody.innerHTML = '';
 
-    // Populate table with new rows
-    data.forEach((room) => {
+    // Populate tables with new rows
+    data.spotify.forEach((room) => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td>${room.roomCode}</td>
@@ -21,8 +23,20 @@ async function updateTable() {
             <td>${room.albumArt}</td>
             <td>${room.status}</td>
             `;
-        tableBody.appendChild(tr);
+        spotifyTableBody.appendChild(tr);
+    });
+
+    data.yt.forEach((room) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${room.roomCode}</td>
+            <td>${room.trackName}</td>
+            <td>${room.positionMs}</td>
+            <td>${room.albumArt}</td>
+            <td>${room.status}</td>
+            `;
+        spotifyTableBody.appendChild(tr);
     });
 }
 
-setInterval(updateTable)
+setInterval(updateTable, 2000);

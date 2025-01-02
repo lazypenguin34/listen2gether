@@ -12,12 +12,14 @@
             rel="stylesheet"
     />
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="admin.css">
 </head>
 <body>
 <div>
     <h1>listen2gether admin panel</h1>
 
-    <table style="border-spacing: 20px;">
+    <h2>spotify rooms</h2>
+    <table>
         <thead>
         <tr>
             <th>room code</th>
@@ -29,7 +31,24 @@
             <th>status</th>
         </tr>
         </thead>
-        <tbody id="roomsTable">
+        <tbody id="spotifyRoomsTable">
+        <!-- Data will appear here -->
+        </tbody>
+    </table>
+
+    <br>
+    <h2>youtube music rooms</h2>
+    <table>
+        <thead>
+        <tr>
+            <th>room code</th>
+            <th>track name</th>
+            <th>position (ms)</th>
+            <th>album art</th>
+            <th>status</th>
+        </tr>
+        </thead>
+        <tbody id="ytRoomsTable">
         <!-- Data will appear here -->
         </tbody>
     </table>
