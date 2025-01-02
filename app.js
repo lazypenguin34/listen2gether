@@ -24,7 +24,13 @@ function SpotifyRoom(roomCode, hostAccessToken, hostRefreshToken, trackName, alb
     this.status = status;
 }
 
-// TODO: Make a YouTube room struct
+function YoutubeRoom(roomCode, trackName, albumArt, status, positionMs) {
+    this.roomCode = roomCode;
+    this.trackName = trackName;
+    this.albumArt = albumArt;
+    this.status = status;
+    this.positionMs = positionMs;
+}
 
 const sdb = new Map() // spotify database
 const ydb = new Map() // youtube database
@@ -34,7 +40,7 @@ const ROOM_UPDATE_INTERVAL_MS = 2000;
 
 function generateRoomCode() {
     if (sdb.size + ydb.size >= MAX_ROOM_CODE) {
-        throw new Error('Exceeded the maximum allowed number of rooms');
+        throw new Error('Error creating room. No empty rooms!');
     }
 
     let roomCode;
@@ -67,21 +73,18 @@ async function updateSpotifyRoom(roomCode) {
         return;
     }
 
+    room.positionMs = data.progress_ms;
     // If the track name is the same, just update the position since everything else will be the same
-    if (room.trackName === data.item.name) {
-        room.positionMs = data.progress_ms;
-        return;
-    }
+    if (room.trackName === data.item.name) return;
 
     room.trackName = data.item.name;
-    room.positionMs = data.progress_ms;
     room.status = 'playing';
     room.albumArt = data.item.album.images[0].url;
     console.log('Updated room: ', roomCode);
 }
 
 // Updates rooms concurrently, but waits for all rooms to be updated before finishing the function
-async function updateRooms() {
+async function updateSpotifyRooms() {
     const spotifyRoomCodes = Array.from(sdb.keys());
 
     try {
@@ -218,14 +221,53 @@ app.get('/admin', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
-// TODO: get youtube rooms
 app.get('/getRooms', (req, res) => {
-    res.json(Array.from(sdb.values()));
+    const spotify = Array.from(sdb.values());
+    const yt = Array.from(ydb.values());
+
+    res.json({'yt': yt, 'spotify': spotify});
 });
 
-setInterval(updateRooms, ROOM_UPDATE_INTERVAL_MS);
+app.get('/createYTRoom', (req, res) => {
+    try {
+        const roomCode = generateRoomCode();
+
+        try {
+            ydb.set(roomCode, new YoutubeRoom(roomCode, null, null, null, null));
+            res.status(201).send(roomCode);
+        } catch (dbError) {
+            console.error(dbError);
+            res.status(500).send('Failed to save room to the database');
+        }
+    } catch (noRoomsError) {
+        console.error(noRoomsError.message);
+        res.status(503).send('No empty rooms available. Please try again later.')
+    }
+});
+
+app.put('/updateYTRoom', (req, res) => {
+    const room = ydb.get(req.body.roomCode);
+
+    // We don't need to handle ads since the request simply won't be sent from the frontend
+    // If paused, don't update any other data since it will either be null or the same
+    if (req.body.paused) {
+        room.status = 'paused';
+        res.status(204);
+    }
+
+    // If the track name is the same, just update the position since everything else will be the same
+    room.positionMs = req.body.positionMs;
+    if (room.trackName === req.body.trackName) res.status(204);
+
+    room.trackName = req.body.trackName;
+    room.status = 'playing';
+    room.albumArt = req.body.albumArt;
+    console.log('Updated room: ', roomCode);
+    res.status(204);
+});
+
+setInterval(updateSpotifyRooms, ROOM_UPDATE_INTERVAL_MS);
 
 app.listen(port, '0.0.0.0', () => {
     console.log(`Server is running at http://0.0.0.0:${port}`);
 });
-
