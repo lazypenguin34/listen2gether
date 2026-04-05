@@ -1,20 +1,13 @@
 {
   "name": "listen2gether",
   "version": "1.0.0",
-  "main": "index.js",
+  "description": "Listen party using Spotify and YouTube Music",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node app.js"
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "server": "cd backend && npm run dev",
+    "client": "cd frontend && npm run dev"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "description": "",
-  "dependencies": {
-    "cookie-parser": "^1.4.7",
-    "cors": "^2.8.5",
-    "express": "^4.21.2",
-    "path": "^0.12.7"
+  "devDependencies": {
+    "concurrently": "^8.2.2"
   }
 }
