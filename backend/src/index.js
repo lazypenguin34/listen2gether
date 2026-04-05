@@ -5,8 +5,9 @@ const crypto = require('crypto');
 
 const app = express();
 const port = process.env.PORT || 8888;
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
-const BACKEND_URL = process.env.BACKEND_URL || `http://localhost:${port}`;
+const isProd = process.env.NODE_ENV === 'production' || !!process.env.WEBSITE_HOSTNAME;
+const FRONTEND_URL = process.env.FRONTEND_URL || (isProd ? 'https://ashy-coast-0a6ab390f.1.azurestaticapps.net' : 'http://localhost:5173');
+const BACKEND_URL = process.env.BACKEND_URL || (isProd ? 'https://listen2gether-backend.azurewebsites.net' : `http://localhost:${port}`);
 const redirect_uri = `${BACKEND_URL}/callback`;
 
 const client_id = process.env.SPOTIFY_CLIENT_ID || 'ce4879073a2b4ec0af0a8cbb736648eb';
@@ -18,7 +19,13 @@ const ydb = new Map();
 const MAX_ROOM_CODE = 9999;
 const ROOM_UPDATE_INTERVAL_MS = 2000;
 
-app.use(cors({ origin: FRONTEND_URL, credentials: true }));
+const ALLOWED_ORIGINS = [
+    FRONTEND_URL,
+    'http://localhost:5173',
+    'https://ashy-coast-0a6ab390f.1.azurestaticapps.net'
+].filter(Boolean);
+
+app.use(cors({ origin: ALLOWED_ORIGINS, credentials: true }));
 app.use(express.json());
 app.use(cookieParser());
 
