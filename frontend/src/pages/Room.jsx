@@ -129,6 +129,10 @@ export default function Room() {
                 }
             } catch (err) {
                 console.error("YTMD Listener Sync Error", err);
+                if (err.response && err.response.status === 401) {
+                    setYtmdListenerToken(null);
+                    localStorage.removeItem('ytmd_listener_token');
+                }
             }
         };
 
