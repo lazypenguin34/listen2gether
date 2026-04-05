@@ -68,7 +68,7 @@ export default function Room() {
             }
         };
 
-        interval = setInterval(pollYTMD, 2000);
+        interval = setInterval(pollYTMD, 5000);
         return () => clearInterval(interval);
     }, [roomCode]);
 
@@ -85,7 +85,7 @@ export default function Room() {
         };
 
         fetchRoomState();
-        const interval = setInterval(fetchRoomState, 2000);
+        const interval = setInterval(fetchRoomState, 5000);
         return () => clearInterval(interval);
     }, [roomCode]);
 
@@ -132,7 +132,7 @@ export default function Room() {
             }
         };
 
-        const interval = setInterval(syncYTMD, 2000);
+        const interval = setInterval(syncYTMD, 5000);
         return () => clearInterval(interval);
     }, [room, isHost, ytmdListenerToken]);
 
@@ -200,7 +200,7 @@ export default function Room() {
             }
         };
 
-        const interval = setInterval(syncSpotify, 2000);
+        const interval = setInterval(syncSpotify, 5000);
         return () => clearInterval(interval);
     }, [room, isHost, spotifyListenerToken]);
 

@@ -17,7 +17,7 @@ const client_secret = process.env.SPOTIFY_CLIENT_SECRET || 'ef0269b6eed9454fb481
 const sdb = new Map();
 const ydb = new Map();
 const MAX_ROOM_CODE = 9999;
-const ROOM_UPDATE_INTERVAL_MS = 2000;
+const ROOM_UPDATE_INTERVAL_MS = 5000;
 
 const ALLOWED_ORIGINS = [
     FRONTEND_URL,
