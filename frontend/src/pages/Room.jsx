@@ -123,7 +123,7 @@ export default function Room() {
                     const hostSeconds = room.positionMs / 1000;
                     if (Math.abs(localSeconds - hostSeconds) > 3) {
                         await axios.post('http://localhost:9863/api/v1/command', {
-                            command: 'seekTo', data: Math.floor(hostSeconds)
+                            command: 'seekTo', value: Math.floor(hostSeconds)
                         }, { headers: { 'Authorization': ytmdListenerToken } });
                     }
                 }
