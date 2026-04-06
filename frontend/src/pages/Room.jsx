@@ -57,7 +57,7 @@ export default function Room() {
                 const trackName = state.video.title;
                 const artistName = state.video.author;
                 const albumArt = state.video.thumbnails && state.video.thumbnails[0] ? state.video.thumbnails[0].url : null;
-                const videoId = state.video.videoId; // Added target videoID
+                const videoId = state.video.id; // Added target videoID
                 
                 // Push to our backend
                 await axios.post(`${BACKEND_URL}/updateYTRoom/${roomCode}`, {
@@ -102,7 +102,7 @@ export default function Room() {
                 const localState = res.data;
 
                 // Sync track
-                if (room.videoId && localState.video.videoId !== room.videoId) {
+                if (room.videoId && localState.video.id !== room.videoId) {
                     await axios.post('http://localhost:9863/api/v1/command', {
                         command: 'changeVideo', data: { videoId: room.videoId }
                     }, { headers: { 'Authorization': ytmdListenerToken } });
