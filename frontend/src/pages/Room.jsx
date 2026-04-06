@@ -68,7 +68,7 @@ export default function Room() {
             }
         };
 
-        interval = setInterval(pollYTMD, 5000);
+        interval = setInterval(pollYTMD, 5500);
         return () => clearInterval(interval);
     }, [roomCode]);
 
@@ -85,7 +85,7 @@ export default function Room() {
         };
 
         fetchRoomState();
-        const interval = setInterval(fetchRoomState, 5000);
+        const interval = setInterval(fetchRoomState, 5500);
         return () => clearInterval(interval);
     }, [roomCode]);
 
@@ -122,13 +122,18 @@ export default function Room() {
                     const localSeconds = localState.player.videoProgress;
                     const hostSeconds = room.positionMs / 1000;
                     if (Math.abs(localSeconds - hostSeconds) > 3) {
+                        const safeHostSeconds = Math.min(Math.floor(hostSeconds), localState.video.durationSeconds || 0);
                         await axios.post('http://localhost:9863/api/v1/command', {
-                            command: 'seekTo', value: Math.floor(hostSeconds)
+                            command: 'seekTo', data: Math.max(0, safeHostSeconds)
                         }, { headers: { 'Authorization': ytmdListenerToken } });
                     }
                 }
             } catch (err) {
                 console.error("YTMD Listener Sync Error", err);
+                if (err.response) {
+                    console.error("YTMD API Response Error Details:", err.response.data);
+                }
+                
                 if (err.response && err.response.status === 401) {
                     setYtmdListenerToken(null);
                     localStorage.removeItem('ytmd_listener_token');
@@ -136,7 +141,7 @@ export default function Room() {
             }
         };
 
-        const interval = setInterval(syncYTMD, 5000);
+        const interval = setInterval(syncYTMD, 5500);
         return () => clearInterval(interval);
     }, [room, isHost, ytmdListenerToken]);
 
@@ -204,7 +209,7 @@ export default function Room() {
             }
         };
 
-        const interval = setInterval(syncSpotify, 5000);
+        const interval = setInterval(syncSpotify, 5500);
         return () => clearInterval(interval);
     }, [room, isHost, spotifyListenerToken]);
 
