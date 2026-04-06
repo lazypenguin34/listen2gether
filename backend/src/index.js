@@ -10,8 +10,12 @@ const FRONTEND_URL = process.env.FRONTEND_URL || (isProd ? 'https://ashy-coast-0
 const BACKEND_URL = process.env.BACKEND_URL || (isProd ? 'https://listen2gether-backend.azurewebsites.net' : `http://localhost:${port}`);
 const redirect_uri = `${BACKEND_URL}/callback`;
 
-const client_id = process.env.SPOTIFY_CLIENT_ID || 'ce4879073a2b4ec0af0a8cbb736648eb';
-const client_secret = process.env.SPOTIFY_CLIENT_SECRET || 'ef0269b6eed9454fb4818fb21720aa3e';
+const client_id = process.env.SPOTIFY_CLIENT_ID;
+const client_secret = process.env.SPOTIFY_CLIENT_SECRET;
+
+if (!client_id || !client_secret) {
+    console.warn("WARNING: SPOTIFY_CLIENT_ID and/or SPOTIFY_CLIENT_SECRET are not set. Spotify features will not work.");
+}
 
 // Keep State in-memory (Maps)
 const sdb = new Map();
