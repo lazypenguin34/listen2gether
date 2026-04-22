@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+
+# Build Output
+build/
+dist/
+
+# Environment Variables
+.env
+.env.*
+
+# VS Code IDE
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+
+# macOS
+.DS_Store
