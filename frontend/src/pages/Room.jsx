@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
+import { io } from 'socket.io-client';
 
 export default function Room() {
     const { roomCode } = useParams();
@@ -11,8 +12,30 @@ export default function Room() {
     const [spotifyListenerToken, setSpotifyListenerToken] = useState(localStorage.getItem('spotify_listener_token'));
     const [ytmdListenerToken, setYtmdListenerToken] = useState(localStorage.getItem('ytmd_listener_token'));
     const [listenerPending, setListenerPending] = useState(false);
+    const [socket, setSocket] = useState(null);
 
     const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8888';
+
+    // Socket setup
+    useEffect(() => {
+        const newSocket = io(BACKEND_URL);
+        setSocket(newSocket);
+
+        newSocket.on('connect', () => {
+            newSocket.emit('joinRoom', roomCode);
+        });
+
+        newSocket.on('roomUpdated', (updatedRoom) => {
+            setRoom(updatedRoom);
+            setError(null);
+        });
+
+        newSocket.on('disconnect', () => {
+            // Optional: Handle disconnect visually
+        });
+
+        return () => newSocket.close();
+    }, [BACKEND_URL, roomCode]);
 
     // Initial Params Setup
     useEffect(() => {
@@ -34,14 +57,21 @@ export default function Room() {
         }
     }, [roomCode]);
 
-    // If we are the YTMD host, we need to poll the local YTMD server and update the backend
+    // If we are the YTMD host, we need to poll the local YTMD server and update the backend via socket
     useEffect(() => {
         const _isHost = localStorage.getItem('ytmd_host_room') === roomCode;
         const ytmdToken = localStorage.getItem('ytmd_token');
 
-        if (!_isHost) return;
+        if (!_isHost || !socket) return;
 
         console.log('Running as YT Host!');
+
+        let lastState = {
+            status: null,
+            trackName: null,
+            videoId: null,
+            positionMs: 0
+        };
 
         let interval;
         const pollYTMD = async () => {
@@ -59,35 +89,28 @@ export default function Room() {
                 const albumArt = state.video.thumbnails && state.video.thumbnails[0] ? state.video.thumbnails[0].url : null;
                 const videoId = state.video.id; // Added target videoID
                 
-                // Push to our backend
-                await axios.post(`${BACKEND_URL}/updateYTRoom/${roomCode}`, {
-                    status, positionMs, trackName, artistName, albumArt, videoId
-                });
+                // State diffing
+                const isSeek = Math.abs(positionMs - lastState.positionMs) > 3000;
+                const hasChanged = status !== lastState.status || 
+                                   videoId !== lastState.videoId ||
+                                   isSeek;
+
+                lastState = { status, trackName, videoId, positionMs };
+                
+                if (hasChanged) {
+                    // Push to our backend via Socket
+                    socket.emit('updateYTRoom', {
+                        roomCode, status, positionMs, trackName, artistName, albumArt, videoId
+                    });
+                }
             } catch (err) {
                 console.error("Failed to poll YTMD API", err);
             }
         };
 
-        interval = setInterval(pollYTMD, 5500);
+        interval = setInterval(pollYTMD, 1500);
         return () => clearInterval(interval);
-    }, [roomCode]);
-
-    // Poll the backend to get the latest Room State for display
-    useEffect(() => {
-        const fetchRoomState = async () => {
-            try {
-                const res = await axios.get(`${BACKEND_URL}/room/${roomCode}`);
-                setRoom(res.data);
-                setError(null);
-            } catch (err) {
-                setError('Room not found or disconnected');
-            }
-        };
-
-        fetchRoomState();
-        const interval = setInterval(fetchRoomState, 5500);
-        return () => clearInterval(interval);
-    }, [roomCode]);
+    }, [roomCode, socket]);
 
 
     // YTMD Listener Sync Logic

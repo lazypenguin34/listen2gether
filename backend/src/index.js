@@ -2,8 +2,11 @@ const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const crypto = require('crypto');
+const http = require('http');
+const { Server } = require('socket.io');
 
 const app = express();
+const server = http.createServer(app);
 const port = process.env.PORT || 8888;
 const isProd = process.env.NODE_ENV === 'production' || !!process.env.WEBSITE_HOSTNAME;
 const FRONTEND_URL = process.env.FRONTEND_URL || (isProd ? 'https://ashy-coast-0a6ab390f.1.azurestaticapps.net' : 'http://localhost:5173');
@@ -32,6 +35,13 @@ const ALLOWED_ORIGINS = [
 app.use(cors({ origin: ALLOWED_ORIGINS, credentials: true }));
 app.use(express.json());
 app.use(cookieParser());
+
+const io = new Server(server, {
+    cors: {
+        origin: ALLOWED_ORIGINS,
+        credentials: true
+    }
+});
 
 // --- Models ---
 class SpotifyRoom {
@@ -95,7 +105,10 @@ async function updateSpotifyRoom(roomCode) {
 
         // 204 No Content means nothing is playing
         if (res.status === 204) {
-            room.status = 'paused';
+            if (room.status !== 'paused') {
+                room.status = 'paused';
+                if (io) io.to(roomCode).emit('roomUpdated', room);
+            }
             return;
         }
 
@@ -107,7 +120,10 @@ async function updateSpotifyRoom(roomCode) {
         }
 
         if (!data.is_playing) {
-            room.status = 'paused';
+            if (room.status !== 'paused') {
+                room.status = 'paused';
+                if (io) io.to(roomCode).emit('roomUpdated', room);
+            }
             return;
         }
 
@@ -121,6 +137,7 @@ async function updateSpotifyRoom(roomCode) {
             room.status = 'playing';
             console.log(`[Spotify] Updated room ${roomCode} view to: ${room.trackName}`);
         }
+        if (io) io.to(roomCode).emit('roomUpdated', room);
     } catch (e) {
         console.error(`Error updating Spotify Room ${roomCode}:`, e);
     }
@@ -280,6 +297,46 @@ app.get('/getRooms', (req, res) => {
     });
 });
 
-app.listen(port, '0.0.0.0', () => {
+io.on('connection', (socket) => {
+    socket.on('joinRoom', (roomCode) => {
+        socket.join(roomCode);
+        const room = sdb.get(roomCode) || ydb.get(roomCode);
+        if (room) {
+            // Strip out sensitive host tokens
+            const safeRoomData = {
+                roomCode: room.roomCode,
+                trackName: room.trackName,
+                artistName: room.artistName,
+                trackUri: room.trackUri,
+                videoId: room.videoId,
+                albumArt: room.albumArt,
+                status: room.status,
+                positionMs: room.positionMs,
+                type: room.type
+            };
+            socket.emit('roomUpdated', safeRoomData);
+        }
+    });
+
+    socket.on('updateYTRoom', (data) => {
+        const { roomCode, status, positionMs, trackName, artistName, albumArt, videoId } = data;
+        const room = ydb.get(roomCode);
+
+        if (!room) return;
+
+        // Update state
+        if (status) room.status = status;
+        if (typeof positionMs !== 'undefined') room.positionMs = positionMs;
+        if (trackName) room.trackName = trackName;
+        if (artistName) room.artistName = artistName;
+        if (albumArt) room.albumArt = albumArt;
+        if (videoId) room.videoId = videoId;
+
+        // Broadcast to all clients in the room
+        io.to(roomCode).emit('roomUpdated', room);
+    });
+});
+
+server.listen(port, '0.0.0.0', () => {
     console.log(`Backend server is running on port ${port}`);
 });
