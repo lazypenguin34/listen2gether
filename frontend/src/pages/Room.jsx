@@ -108,7 +108,7 @@ export default function Room() {
             }
         };
 
-        interval = setInterval(pollYTMD, 1500);
+        interval = setInterval(pollYTMD, 3000);
         return () => clearInterval(interval);
     }, [roomCode, socket]);
 
