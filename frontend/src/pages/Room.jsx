@@ -13,7 +13,6 @@ export default function Room() {
     const [ytmdListenerToken, setYtmdListenerToken] = useState(localStorage.getItem('ytmd_listener_token'));
     const [listenerPending, setListenerPending] = useState(false);
     const [socket, setSocket] = useState(null);
-    const ytmdDelay = 5200;
 
     const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8888';
 
@@ -109,7 +108,7 @@ export default function Room() {
             }
         };
 
-        interval = setInterval(pollYTMD, ytmdDelay);
+        interval = setInterval(pollYTMD, 5500);
         return () => clearInterval(interval);
     }, [roomCode, socket]);
 
@@ -118,13 +117,31 @@ export default function Room() {
     useEffect(() => {
         if (!room || room.type !== 'youtube' || isHost || !ytmdListenerToken) return;
 
-        const syncYTMD = async () => {
+        let localState = null;
+
+        const pollState = async () => {
             try {
                 const res = await axios.get('http://localhost:9863/api/v1/state', {
                     headers: { 'Authorization': ytmdListenerToken }
                 });
-                const localState = res.data;
+                localState = res.data;
+            } catch (err) {
+                console.error("YTMD Listener Sync Error", err);
+                if (err.response) {
+                    console.error("YTMD API Response Error Details:", err.response.data);
+                }
 
+                if (err.response && err.response.status === 401) {
+                    setYtmdListenerToken(null);
+                    localStorage.removeItem('ytmd_listener_token');
+                }
+            }
+        };
+
+        const controlPlayer = async () => {
+            if (!localState) return;
+
+            try {
                 // Sync track
                 if (room.videoId && localState.video.id !== room.videoId) {
                     await axios.post('http://localhost:9863/api/v1/command', {
@@ -153,20 +170,19 @@ export default function Room() {
                     }
                 }
             } catch (err) {
-                console.error("YTMD Listener Sync Error", err);
-                if (err.response) {
-                    console.error("YTMD API Response Error Details:", err.response.data);
-                }
-
-                if (err.response && err.response.status === 401) {
-                    setYtmdListenerToken(null);
-                    localStorage.removeItem('ytmd_listener_token');
-                }
+                console.error("YTMD Listener Command Error", err);
             }
         };
 
-        const interval = setInterval(syncYTMD, 5500);
-        return () => clearInterval(interval);
+        pollState(); // initial poll
+
+        const pollInterval = setInterval(pollState, 5500);
+        const controlInterval = setInterval(controlPlayer, 1500);
+
+        return () => {
+            clearInterval(pollInterval);
+            clearInterval(controlInterval);
+        };
     }, [room, isHost, ytmdListenerToken]);
 
 
@@ -233,7 +249,7 @@ export default function Room() {
             }
         };
 
-        const interval = setInterval(syncSpotify, ytmdDelay);
+        const interval = setInterval(syncSpotify, 1000);
         return () => clearInterval(interval);
     }, [room, isHost, spotifyListenerToken]);
 
