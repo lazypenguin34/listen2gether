@@ -13,7 +13,7 @@ export default function Room() {
     const [ytmdListenerToken, setYtmdListenerToken] = useState(localStorage.getItem('ytmd_listener_token'));
     const [listenerPending, setListenerPending] = useState(false);
     const [socket, setSocket] = useState(null);
-    const ytmdDelay = 5000;
+    const ytmdDelay = 5200;
 
     const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8888';
 
