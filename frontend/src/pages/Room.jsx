@@ -155,6 +155,7 @@ export default function Room() {
                     await axios.post('http://localhost:9863/api/v1/command', {
                         command: 'changeVideo', data: { videoId: currentRoom.videoId }
                     }, { headers: { 'Authorization': ytmdListenerToken } });
+                    localState.video.id = currentRoom.videoId;
                     return; // Wait for next tick to adjust position
                 }
 
@@ -164,6 +165,7 @@ export default function Room() {
                     await axios.post('http://localhost:9863/api/v1/command', {
                         command: currentRoom.status === 'playing' ? 'play' : 'pause'
                     }, { headers: { 'Authorization': ytmdListenerToken } });
+                    localState.player.trackState = currentRoom.status === 'playing' ? 1 : 0;
                 }
 
                 // Sync position if desynced by > 3s
@@ -175,6 +177,7 @@ export default function Room() {
                         await axios.post('http://localhost:9863/api/v1/command', {
                             command: 'seekTo', data: Math.max(0, safeHostSeconds)
                         }, { headers: { 'Authorization': ytmdListenerToken } });
+                        localState.player.videoProgress = safeHostSeconds;
                     }
                 }
             } catch (err) {
