@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
 import { io } from 'socket.io-client';
@@ -113,6 +113,12 @@ export default function Room() {
     }, [roomCode, socket]);
 
 
+    // Reference to keep track of the latest room without triggering effect re-runs
+    const roomRef = useRef(room);
+    useEffect(() => {
+        roomRef.current = room;
+    }, [room]);
+
     // YTMD Listener Sync Logic
     useEffect(() => {
         if (!room || room.type !== 'youtube' || isHost || !ytmdListenerToken) return;
@@ -140,28 +146,30 @@ export default function Room() {
 
         const controlPlayer = async () => {
             if (!localState) return;
+            const currentRoom = roomRef.current;
+            if (!currentRoom) return;
 
             try {
                 // Sync track
-                if (room.videoId && localState.video.id !== room.videoId) {
+                if (currentRoom.videoId && localState.video.id !== currentRoom.videoId) {
                     await axios.post('http://localhost:9863/api/v1/command', {
-                        command: 'changeVideo', data: { videoId: room.videoId }
+                        command: 'changeVideo', data: { videoId: currentRoom.videoId }
                     }, { headers: { 'Authorization': ytmdListenerToken } });
                     return; // Wait for next tick to adjust position
                 }
 
                 // Sync play/pause
                 const localStatus = localState.player.trackState === 1 ? 'playing' : 'paused';
-                if (room.status !== localStatus) {
+                if (currentRoom.status !== localStatus) {
                     await axios.post('http://localhost:9863/api/v1/command', {
-                        command: room.status === 'playing' ? 'play' : 'pause'
+                        command: currentRoom.status === 'playing' ? 'play' : 'pause'
                     }, { headers: { 'Authorization': ytmdListenerToken } });
                 }
 
                 // Sync position if desynced by > 3s
-                if (room.status === 'playing') {
+                if (currentRoom.status === 'playing') {
                     const localSeconds = localState.player.videoProgress;
-                    const hostSeconds = room.positionMs / 1000;
+                    const hostSeconds = currentRoom.positionMs / 1000;
                     if (Math.abs(localSeconds - hostSeconds) > 3) {
                         const safeHostSeconds = Math.min(Math.floor(hostSeconds), localState.video.durationSeconds || 0);
                         await axios.post('http://localhost:9863/api/v1/command', {
@@ -183,7 +191,7 @@ export default function Room() {
             clearInterval(pollInterval);
             clearInterval(controlInterval);
         };
-    }, [room, isHost, ytmdListenerToken]);
+    }, [room?.type, isHost, ytmdListenerToken]);
 
 
     // Spotify Listener Sync Logic
@@ -191,6 +199,9 @@ export default function Room() {
         if (!room || room.type !== 'spotify' || isHost || !spotifyListenerToken) return;
 
         const syncSpotify = async () => {
+            const currentRoom = roomRef.current;
+            if (!currentRoom) return;
+
             try {
                 const res = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
                     headers: { 'Authorization': `Bearer ${spotifyListenerToken}` }
@@ -221,26 +232,26 @@ export default function Room() {
                     'Content-Type': 'application/json'
                 };
 
-                if (room.trackUri && localUri !== room.trackUri) {
+                if (currentRoom.trackUri && localUri !== currentRoom.trackUri) {
                     await fetch('https://api.spotify.com/v1/me/player/play', {
                         method: 'PUT',
                         headers,
-                        body: JSON.stringify({ uris: [room.trackUri], position_ms: room.positionMs })
+                        body: JSON.stringify({ uris: [currentRoom.trackUri], position_ms: currentRoom.positionMs })
                     });
                     return; // Next tick will handle further syncs
                 }
 
-                if (room.status !== localStatus) {
-                    if (room.status === 'playing') {
+                if (currentRoom.status !== localStatus) {
+                    if (currentRoom.status === 'playing') {
                         await fetch('https://api.spotify.com/v1/me/player/play', { method: 'PUT', headers });
                     } else {
                         await fetch('https://api.spotify.com/v1/me/player/pause', { method: 'PUT', headers });
                     }
                 }
 
-                if (room.status === 'playing') {
-                    if (Math.abs(localProgress - room.positionMs) > 3000) {
-                        await fetch(`https://api.spotify.com/v1/me/player/seek?position_ms=${room.positionMs}`, { method: 'PUT', headers });
+                if (currentRoom.status === 'playing') {
+                    if (Math.abs(localProgress - currentRoom.positionMs) > 3000) {
+                        await fetch(`https://api.spotify.com/v1/me/player/seek?position_ms=${currentRoom.positionMs}`, { method: 'PUT', headers });
                     }
                 }
 
@@ -251,7 +262,7 @@ export default function Room() {
 
         const interval = setInterval(syncSpotify, 1000);
         return () => clearInterval(interval);
-    }, [room, isHost, spotifyListenerToken]);
+    }, [room?.type, isHost, spotifyListenerToken]);
 
 
     // Handlers
