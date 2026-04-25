@@ -13,6 +13,7 @@ export default function Room() {
     const [ytmdListenerToken, setYtmdListenerToken] = useState(localStorage.getItem('ytmd_listener_token'));
     const [listenerPending, setListenerPending] = useState(false);
     const [socket, setSocket] = useState(null);
+    const ytmdDelay = 5000;
 
     const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8888';
 
@@ -40,7 +41,7 @@ export default function Room() {
     // Initial Params Setup
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
-        
+
         if (params.get('host') === 'true' || localStorage.getItem('ytmd_host_room') === roomCode) {
             setIsHost(true);
         }
@@ -88,15 +89,15 @@ export default function Room() {
                 const artistName = state.video.author;
                 const albumArt = state.video.thumbnails && state.video.thumbnails[0] ? state.video.thumbnails[0].url : null;
                 const videoId = state.video.id; // Added target videoID
-                
+
                 // State diffing
                 const isSeek = Math.abs(positionMs - lastState.positionMs) > 3000;
-                const hasChanged = status !== lastState.status || 
-                                   videoId !== lastState.videoId ||
-                                   isSeek;
+                const hasChanged = status !== lastState.status ||
+                    videoId !== lastState.videoId ||
+                    isSeek;
 
                 lastState = { status, trackName, videoId, positionMs };
-                
+
                 if (hasChanged) {
                     // Push to our backend via Socket
                     socket.emit('updateYTRoom', {
@@ -108,7 +109,7 @@ export default function Room() {
             }
         };
 
-        interval = setInterval(pollYTMD, 3000);
+        interval = setInterval(pollYTMD, ytmdDelay);
         return () => clearInterval(interval);
     }, [roomCode, socket]);
 
@@ -156,7 +157,7 @@ export default function Room() {
                 if (err.response) {
                     console.error("YTMD API Response Error Details:", err.response.data);
                 }
-                
+
                 if (err.response && err.response.status === 401) {
                     setYtmdListenerToken(null);
                     localStorage.removeItem('ytmd_listener_token');
@@ -178,18 +179,18 @@ export default function Room() {
                 const res = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
                     headers: { 'Authorization': `Bearer ${spotifyListenerToken}` }
                 });
-                
+
                 if (res.status === 401) {
                     // Token expired
                     setSpotifyListenerToken(null);
                     localStorage.removeItem('spotify_listener_token');
                     return;
                 }
-                
+
                 let localUri = null;
                 let localStatus = 'paused';
                 let localProgress = 0;
-                
+
                 if (res.status === 200) {
                     const data = await res.json();
                     if (data && data.item) {
@@ -215,15 +216,15 @@ export default function Room() {
 
                 if (room.status !== localStatus) {
                     if (room.status === 'playing') {
-                         await fetch('https://api.spotify.com/v1/me/player/play', { method: 'PUT', headers });
+                        await fetch('https://api.spotify.com/v1/me/player/play', { method: 'PUT', headers });
                     } else {
-                         await fetch('https://api.spotify.com/v1/me/player/pause', { method: 'PUT', headers });
+                        await fetch('https://api.spotify.com/v1/me/player/pause', { method: 'PUT', headers });
                     }
                 }
 
                 if (room.status === 'playing') {
                     if (Math.abs(localProgress - room.positionMs) > 3000) {
-                         await fetch(`https://api.spotify.com/v1/me/player/seek?position_ms=${room.positionMs}`, { method: 'PUT', headers });
+                        await fetch(`https://api.spotify.com/v1/me/player/seek?position_ms=${room.positionMs}`, { method: 'PUT', headers });
                     }
                 }
 
@@ -232,7 +233,7 @@ export default function Room() {
             }
         };
 
-        const interval = setInterval(syncSpotify, 5500);
+        const interval = setInterval(syncSpotify, ytmdDelay);
         return () => clearInterval(interval);
     }, [room, isHost, spotifyListenerToken]);
 
@@ -291,17 +292,17 @@ export default function Room() {
                     <span style={{ color: '#888' }}>No Art</span>
                 </div>
             )}
-            
+
             <div className="track-info">
                 <h1 className="track-title">{room.trackName || 'Nothing Playing'}</h1>
                 <h2 className="track-artist">{room.artistName || '...'}</h2>
-                
+
                 <div className="progress-container">
                     {/* Fake progress bar styling for aesthetics */}
                     <div className="progress-bar" style={{ width: room.status === 'playing' ? '100%' : '50%', transition: 'width 2s' }}></div>
                 </div>
             </div>
-            <div style={{opacity: 0.5, marginTop: '2rem'}}>
+            <div style={{ opacity: 0.5, marginTop: '2rem' }}>
                 <span className={`badge ${room.status}`}>{room.status.toUpperCase()}</span>
                 &nbsp; · &nbsp; Room {room.roomCode}
                 {isHost && ' (HOST)'}
@@ -309,19 +310,19 @@ export default function Room() {
 
             {/* Listener Sync UI */}
             {!isHost && room.type === 'spotify' && !spotifyListenerToken && (
-                <button className="btn-spotify" onClick={handleSpotifyListenerLogin} style={{marginTop: '1rem'}}>
+                <button className="btn-spotify" onClick={handleSpotifyListenerLogin} style={{ marginTop: '1rem' }}>
                     Connect Spotify to Sync Playback
                 </button>
             )}
 
             {!isHost && room.type === 'youtube' && !ytmdListenerToken && (
-                <button className="btn-youtube" onClick={handleYTMDListenerLogin} disabled={listenerPending} style={{marginTop: '1rem'}}>
+                <button className="btn-youtube" onClick={handleYTMDListenerLogin} disabled={listenerPending} style={{ marginTop: '1rem' }}>
                     {listenerPending ? 'Connecting...' : 'Connect YTMD to Sync Playback'}
                 </button>
             )}
-            
+
             {!isHost && ((room.type === 'spotify' && spotifyListenerToken) || (room.type === 'youtube' && ytmdListenerToken)) && (
-                <div style={{color: '#4ade80', marginTop: '1rem', fontWeight: 'bold' }}>
+                <div style={{ color: '#4ade80', marginTop: '1rem', fontWeight: 'bold' }}>
                     ✓ Synchronizing playback
                 </div>
             )}
