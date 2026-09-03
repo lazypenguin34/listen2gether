@@ -150,13 +150,8 @@ npm run format:check
 
 # backend
 cd backend
-npm test         # node --test test/
+npm test         # node --test "test/*.test.js"
 ```
-
-Two things worth knowing before you rely on these:
-
-- As of this writing, `frontend/src` has no `*.test.*` files yet, so `npm run test` in `frontend/` currently exits with "No test files found" — that's expected to change as tests are added, not a sign anything is misconfigured.
-- The backend's `node --test test/` invocation is sensitive to Node version: on the Node installed in this environment (v25.9.0) it fails with `MODULE_NOT_FOUND` because the CLI doesn't resolve the bare directory argument, even though the tests themselves are fine (`node --test` with no path argument runs and passes all 48 of them). CI pins `node-version: '24.x'`, which may or may not hit the same issue. If `npm test` in `backend/` fails with `MODULE_NOT_FOUND` for you, try `node --test` with no arguments as a workaround.
 
 ## Deployment
 
@@ -167,10 +162,7 @@ Two GitHub Actions workflows deploy to Azure on every push to `main`:
 
 A separate **`.github/workflows/ci.yml`** runs on pull requests and pushes to `main`: lint + test + build for the frontend, test for the backend. It does not deploy anything.
 
-**Manual step required on the Azure App Service (invisible from this repo):**
-
-- Set `ADMIN_TOKEN` in the App Service's Application Settings (Configuration blade) — it is not read from any file checked into the repo, and without it the deployed `/getRooms` endpoint will 503 for everyone, admin included.
-- Delete the old `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` application settings if they're still there from before this rewrite. They are unused now; leaving them in place doesn't break anything but they're dead configuration that will confuse the next person who looks at the App Service settings.
+The frontend is hosted at **https://ashy-coast-0a6ab390f.1.azurestaticapps.net/**.
 
 ## Known limitations
 
