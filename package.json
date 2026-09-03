@@ -1,7 +1,7 @@
 {
   "name": "listen2gether",
   "version": "1.0.0",
-  "description": "Listen party using Spotify and YouTube Music",
+  "description": "Synchronized YouTube Music listening parties via the YouTube Music Desktop companion app",
   "scripts": {
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "server": "cd backend && npm run dev",

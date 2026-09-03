@@ -1,342 +1,220 @@
+'use strict';
+
 const express = require('express');
 const cors = require('cors');
-const cookieParser = require('cookie-parser');
-const crypto = require('crypto');
 const http = require('http');
 const { Server } = require('socket.io');
 
-const app = express();
-const server = http.createServer(app);
-const port = process.env.PORT || 8888;
-const isProd = process.env.NODE_ENV === 'production' || !!process.env.WEBSITE_HOSTNAME;
-const FRONTEND_URL = process.env.FRONTEND_URL || (isProd ? 'https://ashy-coast-0a6ab390f.1.azurestaticapps.net' : 'http://localhost:5173');
-const BACKEND_URL = process.env.BACKEND_URL || (isProd ? 'https://listen2gether-backend.azurewebsites.net' : `http://localhost:${port}`);
-const redirect_uri = `${BACKEND_URL}/callback`;
+const {
+    Room,
+    toPublicRoom,
+    parseRoomUpdate,
+    applyRoomUpdate,
+    generateHostSecret,
+    generateRoomCode,
+    secretMatches,
+} = require('./room');
+const { startSweeper } = require('./rooms-store');
+const { createRateLimiter } = require('./rate-limiter');
 
-const client_id = process.env.SPOTIFY_CLIENT_ID;
-const client_secret = process.env.SPOTIFY_CLIENT_SECRET;
+// Mirrors frontend/src/lib/config.js SOCKET_EVENTS. Keep the two in step.
+const SOCKET_EVENTS = {
+    // client -> server
+    joinRoom: 'joinRoom',
+    updateRoom: 'updateRoom',
+    // server -> client
+    roomUpdated: 'roomUpdated',
+    roomNotFound: 'roomNotFound',
+    unauthorized: 'unauthorized',
+    updateRejected: 'updateRejected',
+};
 
-if (!client_id || !client_secret) {
-    console.warn("WARNING: SPOTIFY_CLIENT_ID and/or SPOTIFY_CLIENT_SECRET are not set. Spotify features will not work.");
+/** Pulls a bearer token out of the Authorization header, if present. */
+function bearerToken(req) {
+    const header = req.get('authorization');
+    if (!header || !header.startsWith('Bearer ')) return null;
+    return header.slice('Bearer '.length).trim();
 }
 
-// Keep State in-memory (Maps)
-const sdb = new Map();
-const ydb = new Map();
-const MAX_ROOM_CODE = 9999;
-const ROOM_UPDATE_INTERVAL_MS = 5500;
+/** A host secret may arrive via the Authorization header or the JSON body. */
+function extractHostSecret(req) {
+    const fromHeader = bearerToken(req);
+    if (fromHeader) return fromHeader;
+    if (req.body && typeof req.body.hostSecret === 'string') return req.body.hostSecret;
+    return null;
+}
 
-const ALLOWED_ORIGINS = [
-    FRONTEND_URL,
-    'http://localhost:5173',
-    'https://ashy-coast-0a6ab390f.1.azurestaticapps.net'
-].filter(Boolean);
+function listenerCountFor(io, roomCode) {
+    return io.sockets.adapter.rooms.get(roomCode)?.size ?? 0;
+}
 
-app.use(cors({ origin: ALLOWED_ORIGINS, credentials: true }));
-app.use(express.json());
-app.use(cookieParser());
+function createServer() {
+    const isProd = process.env.NODE_ENV === 'production' || !!process.env.WEBSITE_HOSTNAME;
+    const FRONTEND_URL = process.env.FRONTEND_URL || (isProd ? 'https://ashy-coast-0a6ab390f.1.azurestaticapps.net' : 'http://localhost:5173');
 
-const io = new Server(server, {
-    cors: {
-        origin: ALLOWED_ORIGINS,
-        credentials: true
+    const ALLOWED_ORIGINS = [
+        FRONTEND_URL,
+        'http://localhost:5173',
+        'https://ashy-coast-0a6ab390f.1.azurestaticapps.net'
+    ].filter(Boolean);
+
+    const ADMIN_TOKEN = process.env.ADMIN_TOKEN || null;
+    if (!ADMIN_TOKEN) {
+        console.warn('WARNING: ADMIN_TOKEN is not set. GET /getRooms will respond 503 until it is configured.');
     }
-});
 
-// --- Models ---
-class SpotifyRoom {
-    constructor(roomCode, hostAccessToken, hostRefreshToken) {
-        this.roomCode = roomCode;
-        this.hostAccessToken = hostAccessToken;
-        this.hostRefreshToken = hostRefreshToken;
-        this.trackName = null;
-        this.artistName = null;
-        this.trackUri = null;
-        this.positionMs = 0;
-        this.albumArt = null;
-        this.status = 'paused';
-        this.type = 'spotify';
-    }
-}
+    const app = express();
+    const server = http.createServer(app);
+    const rooms = new Map();
 
-class YoutubeRoom {
-    constructor(roomCode) {
-        this.roomCode = roomCode;
-        this.trackName = null;
-        this.artistName = null;
-        this.videoId = null;
-        this.albumArt = null;
-        this.status = 'paused';
-        this.positionMs = 0;
-        this.type = 'youtube';
-    }
-}
+    app.use(cors({ origin: ALLOWED_ORIGINS, credentials: true }));
+    app.use(express.json());
 
-// --- Utilities ---
-function generateRoomCode() {
-    if (sdb.size + ydb.size >= MAX_ROOM_CODE) {
-        throw new Error('No empty rooms available.');
-    }
-    let roomCode;
-    do {
-        roomCode = crypto.randomInt(1, MAX_ROOM_CODE + 1).toString().padStart(4, '0');
-    } while (sdb.has(roomCode) || ydb.has(roomCode));
-    return roomCode;
-}
+    const io = new Server(server, {
+        cors: {
+            origin: ALLOWED_ORIGINS,
+            credentials: true,
+        },
+    });
 
-function generateRandomString(length) {
-    return crypto.randomBytes(length).toString('hex').slice(0, length);
-}
+    // --- REST ---
 
-// --- Spotify Polling Logic ---
-async function updateSpotifyRoom(roomCode) {
-    const room = sdb.get(roomCode);
-    if (!room) return;
+    app.get('/health', (req, res) => {
+        res.json({ ok: true, rooms: rooms.size, uptime: process.uptime() });
+    });
 
-    try {
-        const res = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
-            headers: { Authorization: `Bearer ${room.hostAccessToken}` },
+    app.post('/createRoom', (req, res) => {
+        let roomCode;
+        try {
+            roomCode = generateRoomCode(rooms);
+        } catch (e) {
+            return res.status(503).json({ error: e.message });
+        }
+
+        const hostSecret = generateHostSecret();
+        rooms.set(roomCode, new Room(roomCode, hostSecret));
+        res.status(201).json({ roomCode, hostSecret });
+    });
+
+    app.get('/room/:roomCode', (req, res) => {
+        const room = rooms.get(req.params.roomCode);
+        if (!room) return res.status(404).json({ error: 'Room not found' });
+        res.json(toPublicRoom(room, listenerCountFor(io, room.roomCode)));
+    });
+
+    app.post('/updateRoom/:roomCode', (req, res) => {
+        const room = rooms.get(req.params.roomCode);
+        if (!room) return res.status(404).json({ error: 'Room not found' });
+
+        if (!secretMatches(room.hostSecret, extractHostSecret(req))) {
+            return res.status(403).json({ error: 'Invalid host secret' });
+        }
+
+        const parsed = parseRoomUpdate(req.body);
+        if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+
+        applyRoomUpdate(room, parsed.value);
+
+        const publicRoom = toPublicRoom(room, listenerCountFor(io, room.roomCode));
+        io.to(room.roomCode).emit(SOCKET_EVENTS.roomUpdated, publicRoom);
+
+        res.status(204).send();
+    });
+
+    app.get('/getRooms', (req, res) => {
+        if (!ADMIN_TOKEN) return res.status(503).json({ error: 'Admin API not configured' });
+        if (!secretMatches(ADMIN_TOKEN, bearerToken(req))) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        res.json({
+            rooms: Array.from(rooms.values()).map((room) => toPublicRoom(room, listenerCountFor(io, room.roomCode))),
+        });
+    });
+
+    // --- Socket.IO ---
+
+    const rateLimiter = createRateLimiter();
+
+    io.on('connection', (socket) => {
+        socket.on(SOCKET_EVENTS.joinRoom, (payload) => {
+            const roomCode = typeof payload === 'string' ? payload : payload?.roomCode;
+            const hostSecret = (payload && typeof payload === 'object') ? payload.hostSecret : undefined;
+
+            const room = rooms.get(roomCode);
+            if (!room) {
+                socket.emit(SOCKET_EVENTS.roomNotFound, roomCode);
+                return;
+            }
+
+            socket.join(roomCode);
+            room.lastSeenAt = Date.now();
+
+            if (hostSecret && secretMatches(room.hostSecret, hostSecret)) {
+                room.hostSocketId = socket.id;
+            }
+
+            const publicRoom = toPublicRoom(room, listenerCountFor(io, roomCode));
+            // The joiner gets full state immediately...
+            socket.emit(SOCKET_EVENTS.roomUpdated, publicRoom);
+            // ...everyone else just needs the refreshed listenerCount (carried on the same shape).
+            socket.to(roomCode).emit(SOCKET_EVENTS.roomUpdated, publicRoom);
         });
 
-        if (!res.ok) {
-            // Handle token expiry ideally, but keeping it simple for now
-            return;
-        }
+        socket.on(SOCKET_EVENTS.updateRoom, (payload) => {
+            if (!rateLimiter.allow(socket.id)) return;
 
-        // 204 No Content means nothing is playing
-        if (res.status === 204) {
-            if (room.status !== 'paused') {
-                room.status = 'paused';
-                if (io) io.to(roomCode).emit('roomUpdated', room);
+            const { roomCode, hostSecret, ...fields } = payload || {};
+            const room = rooms.get(roomCode);
+            if (!room) return;
+
+            if (!secretMatches(room.hostSecret, hostSecret)) {
+                socket.emit(SOCKET_EVENTS.unauthorized);
+                return;
             }
-            return;
-        }
 
-        const data = await res.json();
-
-        // Check if an ad or unknown
-        if (data.currently_playing_type === 'ad' || data.currently_playing_type === 'unknown') {
-            return; // ignore update during ads
-        }
-
-        if (!data.is_playing) {
-            if (room.status !== 'paused') {
-                room.status = 'paused';
-                if (io) io.to(roomCode).emit('roomUpdated', room);
+            const parsed = parseRoomUpdate(fields);
+            if (!parsed.ok) {
+                socket.emit(SOCKET_EVENTS.updateRejected, { error: parsed.error });
+                return;
             }
-            return;
-        }
 
-        // Updating live details
-        room.positionMs = data.progress_ms;
-        if (room.trackName !== data.item.name) {
-            room.trackName = data.item.name;
-            room.artistName = data.item.artists.map(a => a.name).join(', ');
-            room.trackUri = data.item.uri;
-            room.albumArt = data.item.album.images[0]?.url || null;
-            room.status = 'playing';
-            console.log(`[Spotify] Updated room ${roomCode} view to: ${room.trackName}`);
-        }
-        if (io) io.to(roomCode).emit('roomUpdated', room);
-    } catch (e) {
-        console.error(`Error updating Spotify Room ${roomCode}:`, e);
-    }
-}
-
-async function updateSpotifyRooms() {
-    const promises = Array.from(sdb.keys()).map(roomCode => updateSpotifyRoom(roomCode));
-    await Promise.allSettled(promises);
-}
-
-setInterval(updateSpotifyRooms, ROOM_UPDATE_INTERVAL_MS);
-
-// --- Endpoints ---
-
-// 1. Spotify Auth
-const stateKey = 'spotify_auth_state';
-const joinRoomKey = 'spotify_join_room';
-
-app.get('/spotifyLogin', (req, res) => {
-    const state = generateRandomString(16);
-    res.cookie(stateKey, state);
-
-    if (req.query.joinRoom) {
-        res.cookie(joinRoomKey, req.query.joinRoom);
-    } else {
-        res.clearCookie(joinRoomKey);
-    }
-
-    const scope = 'user-read-private user-read-email user-read-currently-playing user-modify-playback-state';
-    const params = new URLSearchParams({
-        response_type: 'code',
-        client_id: client_id,
-        scope: scope,
-        redirect_uri: redirect_uri,
-        state: state
-    });
-
-    res.redirect('https://accounts.spotify.com/authorize?' + params.toString());
-});
-
-app.get('/callback', async (req, res) => {
-    const code = req.query.code || null;
-    const state = req.query.state || null;
-    const storedState = req.cookies ? req.cookies[stateKey] : null;
-
-    if (state === null || state !== storedState) {
-        return res.redirect(`${FRONTEND_URL}/?error=state_mismatch`);
-    }
-
-    res.clearCookie(stateKey);
-
-    const authParams = new URLSearchParams({
-        code: code,
-        redirect_uri: redirect_uri,
-        grant_type: 'authorization_code',
-    });
-
-    const authHeaders = {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Authorization: 'Basic ' + Buffer.from(`${client_id}:${client_secret}`).toString('base64'),
-    };
-
-    try {
-        const tokenResponse = await fetch('https://accounts.spotify.com/api/token', {
-            method: 'POST',
-            body: authParams.toString(),
-            headers: authHeaders,
+            applyRoomUpdate(room, parsed.value);
+            io.to(roomCode).emit(SOCKET_EVENTS.roomUpdated, toPublicRoom(room, listenerCountFor(io, roomCode)));
         });
 
-        if (!tokenResponse.ok) throw new Error('Failed to exchange auth code');
+        socket.on('disconnecting', () => {
+            for (const roomCode of socket.rooms) {
+                if (roomCode === socket.id) continue; // socket's own private room
+                const room = rooms.get(roomCode);
+                if (!room) continue;
 
-        const tokenData = await tokenResponse.json();
-        
-        const joinRoom = req.cookies ? req.cookies[joinRoomKey] : null;
-        res.clearCookie(joinRoomKey);
+                if (room.hostSocketId === socket.id) {
+                    room.hostSocketId = null;
+                }
 
-        if (joinRoom) {
-            // This is a listener logging in, redirect back to their room with the token
-            return res.redirect(`${FRONTEND_URL}/room/${joinRoom}?listenerToken=${tokenData.access_token}`);
-        }
+                // `disconnecting` fires while this socket is still counted in the room.
+                const count = Math.max(0, listenerCountFor(io, roomCode) - 1);
+                io.to(roomCode).emit(SOCKET_EVENTS.roomUpdated, toPublicRoom(room, count));
+            }
+        });
 
-        const roomCode = generateRoomCode();
-        
-        sdb.set(roomCode, new SpotifyRoom(roomCode, tokenData.access_token, tokenData.refresh_token));
-        await updateSpotifyRoom(roomCode);
-
-        // Redirect host to the room
-        res.redirect(`${FRONTEND_URL}/room/${roomCode}?host=true`);
-    } catch (err) {
-        console.error(err);
-        res.redirect(`${FRONTEND_URL}/?error=auth_failed`);
-    }
-});
-
-// 2. Room Lookups
-app.get('/room/:roomCode', (req, res) => {
-    const { roomCode } = req.params;
-    let room = sdb.get(roomCode) || ydb.get(roomCode);
-    
-    if (!room) {
-        return res.status(404).json({ error: 'Room not found' });
-    }
-
-    // Strip out sensitive host tokens before sending to client
-    const safeRoomData = {
-        roomCode: room.roomCode,
-        trackName: room.trackName,
-        artistName: room.artistName,
-        trackUri: room.trackUri,
-        videoId: room.videoId,
-        albumArt: room.albumArt,
-        status: room.status,
-        positionMs: room.positionMs,
-        type: room.type
-    };
-
-    res.json(safeRoomData);
-});
-
-// 3. YouTube Music (YTMD) API Integration
-app.post('/createYTRoom', (req, res) => {
-    try {
-        const roomCode = generateRoomCode();
-        ydb.set(roomCode, new YoutubeRoom(roomCode));
-        res.status(201).json({ roomCode });
-    } catch (e) {
-        res.status(503).json({ error: e.message });
-    }
-});
-
-app.post('/updateYTRoom/:roomCode', (req, res) => {
-    const { roomCode } = req.params;
-    const room = ydb.get(roomCode);
-
-    if (!room) {
-        return res.status(404).json({ error: 'Youtube Room not found' });
-    }
-
-    const { status, positionMs, trackName, artistName, albumArt, videoId } = req.body;
-    
-    // Process the state coming from the YTMD client
-    if (status) room.status = status;
-    if (typeof positionMs !== 'undefined') room.positionMs = positionMs;
-    if (trackName) room.trackName = trackName;
-    if (artistName) room.artistName = artistName;
-    if (albumArt) room.albumArt = albumArt;
-    if (videoId) room.videoId = videoId;
-
-    res.status(204).send();
-});
-
-// 4. Admin API
-app.get('/getRooms', (req, res) => {
-    res.json({
-        spotify: Array.from(sdb.values()).map(r => ({ ...r, hostAccessToken: undefined, hostRefreshToken: undefined })),
-        yt: Array.from(ydb.values()),
-    });
-});
-
-io.on('connection', (socket) => {
-    socket.on('joinRoom', (roomCode) => {
-        socket.join(roomCode);
-        const room = sdb.get(roomCode) || ydb.get(roomCode);
-        if (room) {
-            // Strip out sensitive host tokens
-            const safeRoomData = {
-                roomCode: room.roomCode,
-                trackName: room.trackName,
-                artistName: room.artistName,
-                trackUri: room.trackUri,
-                videoId: room.videoId,
-                albumArt: room.albumArt,
-                status: room.status,
-                positionMs: room.positionMs,
-                type: room.type
-            };
-            socket.emit('roomUpdated', safeRoomData);
-        }
+        socket.on('disconnect', () => {
+            rateLimiter.remove(socket.id);
+        });
     });
 
-    socket.on('updateYTRoom', (data) => {
-        const { roomCode, status, positionMs, trackName, artistName, albumArt, videoId } = data;
-        const room = ydb.get(roomCode);
+    const sweeper = startSweeper(rooms);
 
-        if (!room) return;
+    return { app, server, io, rooms, sweeper };
+}
 
-        // Update state
-        if (status) room.status = status;
-        if (typeof positionMs !== 'undefined') room.positionMs = positionMs;
-        if (trackName) room.trackName = trackName;
-        if (artistName) room.artistName = artistName;
-        if (albumArt) room.albumArt = albumArt;
-        if (videoId) room.videoId = videoId;
-
-        // Broadcast to all clients in the room
-        io.to(roomCode).emit('roomUpdated', room);
+if (require.main === module) {
+    const port = process.env.PORT || 8888;
+    const { server } = createServer();
+    server.listen(port, '0.0.0.0', () => {
+        console.log(`Backend server is running on port ${port}`);
     });
-});
+}
 
-server.listen(port, '0.0.0.0', () => {
-    console.log(`Backend server is running on port ${port}`);
-});
+module.exports = { createServer, SOCKET_EVENTS };

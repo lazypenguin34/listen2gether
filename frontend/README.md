@@ -1,16 +1,27 @@
-# React + Vite
+# listen2gether frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React 19 + Vite single-page app for listen2gether. See the [repo root README](../README.md) for what the app does, prerequisites (YouTube Music Desktop with its Companion Server enabled), setup, the API/socket reference, and deployment.
 
-Currently, two official plugins are available:
+## Layout
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- `src/pages/` — routed screens: `Home.jsx` (create/join a room), `Room.jsx` (now-playing + sync), `Admin.jsx` (token-gated room list).
+- `src/lib/` — everything else: `config.js` (every tunable constant and env var), `ytmd.js` (YouTube Music Desktop companion API client), `useRoomSocket.js` (Socket.IO connection + room state), `useYtmdHost.js` / `useYtmdListener.js` (the two sync loops), `playback.js` (position interpolation math, mirrors the backend), `hostSecret.js` (per-room host secret storage).
+- `src/components/` — presentational pieces used by the pages above.
 
-## React Compiler
+## Commands
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Run from this directory:
 
-## Expanding the ESLint configuration
+```bash
+npm install
+npm run dev      # vite dev server, http://localhost:5173
+npm run build    # production build to dist/
+npm run preview  # preview a production build locally
+npm run test     # vitest run
+npm run lint     # see note below
+npm run format   # prettier --write, covers ../backend/src too
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+`npm run lint` is not a plain frontend-only lint: it `cd`s up to the repo root and runs ESLint from this package's `node_modules` against both `backend/src` and `frontend/src` using the shared root `eslint.config.mjs`. Run it from here, but expect it to report on backend code too.
+
+Environment variables (`VITE_BACKEND_URL`, `VITE_YTMD_URL`) are documented in [`.env.example`](.env.example) and in the root README's [Configuration](../README.md#configuration) section.

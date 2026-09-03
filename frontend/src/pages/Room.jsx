@@ -1,361 +1,104 @@
-import { useEffect, useState, useRef } from 'react';
-import { useParams } from 'react-router-dom';
-import axios from 'axios';
-import { io } from 'socket.io-client';
+import { useMemo, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
+import { useRoomSocket } from '../lib/useRoomSocket.js';
+import { useYtmdHost } from '../lib/useYtmdHost.js';
+import { useYtmdListener } from '../lib/useYtmdListener.js';
+import { readHostSecret } from '../lib/hostSecret.js';
+import { readStoredToken } from '../lib/ytmd.js';
+import AmbientBackdrop from '../components/AmbientBackdrop.jsx';
+import AlbumArt from '../components/AlbumArt.jsx';
+import ProgressBar from '../components/ProgressBar.jsx';
+import StatusPill from '../components/StatusPill.jsx';
+import RoomCode from '../components/RoomCode.jsx';
+import ConnectYtmd from '../components/ConnectYtmd.jsx';
 
 export default function Room() {
     const { roomCode } = useParams();
-    const [room, setRoom] = useState(null);
-    const [error, setError] = useState(null);
+    const { room, listenerCount, notFound, connected, clockOffsetMs, socket } = useRoomSocket(roomCode);
 
-    const [isHost, setIsHost] = useState(false);
-    const [spotifyListenerToken, setSpotifyListenerToken] = useState(localStorage.getItem('spotify_listener_token'));
-    const [ytmdListenerToken, setYtmdListenerToken] = useState(localStorage.getItem('ytmd_listener_token'));
-    const [listenerPending, setListenerPending] = useState(false);
-    const [socket, setSocket] = useState(null);
+    // Host-ness comes from possession of the room's host secret, not from a
+    // client-asserted query param — only whoever created the room (or has
+    // localStorage from that browser) ever has this.
+    const hostSecret = useMemo(() => readHostSecret(roomCode), [roomCode]);
+    const isHost = hostSecret !== null;
 
-    const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8888';
+    const [ytmdToken, setYtmdToken] = useState(() => readStoredToken());
 
-    // Socket setup
-    useEffect(() => {
-        const newSocket = io(BACKEND_URL);
-        setSocket(newSocket);
+    const { error: hostError } = useYtmdHost({
+        roomCode,
+        hostSecret,
+        socket,
+        token: ytmdToken,
+        enabled: isHost,
+    });
 
-        newSocket.on('connect', () => {
-            newSocket.emit('joinRoom', roomCode);
-        });
+    const { syncing, error: listenerError } = useYtmdListener({
+        room,
+        clockOffsetMs,
+        token: ytmdToken,
+        enabled: !isHost && !!ytmdToken,
+    });
 
-        newSocket.on('roomUpdated', (updatedRoom) => {
-            setRoom(updatedRoom);
-            setError(null);
-        });
-
-        newSocket.on('disconnect', () => {
-            // Optional: Handle disconnect visually
-        });
-
-        return () => newSocket.close();
-    }, [BACKEND_URL, roomCode]);
-
-    // Initial Params Setup
-    useEffect(() => {
-        const params = new URLSearchParams(window.location.search);
-
-        if (params.get('host') === 'true' || localStorage.getItem('ytmd_host_room') === roomCode) {
-            setIsHost(true);
-        }
-
-        const sToken = params.get('listenerToken');
-        if (sToken) {
-            localStorage.setItem('spotify_listener_token', sToken);
-            setSpotifyListenerToken(sToken);
-        }
-
-        // Clean url
-        if (params.has('host') || params.has('listenerToken')) {
-            window.history.replaceState({}, document.title, window.location.pathname);
-        }
-    }, [roomCode]);
-
-    // If we are the YTMD host, we need to poll the local YTMD server and update the backend via socket
-    useEffect(() => {
-        const _isHost = localStorage.getItem('ytmd_host_room') === roomCode;
-        const ytmdToken = localStorage.getItem('ytmd_token');
-
-        if (!_isHost || !socket) return;
-
-        console.log('Running as YT Host!');
-
-        let lastState = {
-            status: null,
-            trackName: null,
-            videoId: null,
-            positionMs: 0
-        };
-
-        let interval;
-        const pollYTMD = async () => {
-            try {
-                // Fetch state from YTMD Companion
-                const res = await axios.get('http://localhost:9863/api/v1/state', {
-                    headers: { 'Authorization': ytmdToken }
-                });
-
-                const state = res.data;
-                const status = state.player.trackState === 1 ? 'playing' : 'paused';
-                const positionMs = state.player.videoProgress * 1000;
-                const trackName = state.video.title;
-                const artistName = state.video.author;
-                const albumArt = state.video.thumbnails && state.video.thumbnails[0] ? state.video.thumbnails[0].url : null;
-                const videoId = state.video.id; // Added target videoID
-
-                // State diffing
-                const isSeek = Math.abs(positionMs - lastState.positionMs) > 3000;
-                const hasChanged = status !== lastState.status ||
-                    videoId !== lastState.videoId ||
-                    isSeek;
-
-                lastState = { status, trackName, videoId, positionMs };
-
-                if (hasChanged) {
-                    // Push to our backend via Socket
-                    socket.emit('updateYTRoom', {
-                        roomCode, status, positionMs, trackName, artistName, albumArt, videoId
-                    });
-                }
-            } catch (err) {
-                console.error("Failed to poll YTMD API", err);
-            }
-        };
-
-        interval = setInterval(pollYTMD, 5500);
-        return () => clearInterval(interval);
-    }, [roomCode, socket]);
-
-
-    // Reference to keep track of the latest room without triggering effect re-runs
-    const roomRef = useRef(room);
-    useEffect(() => {
-        roomRef.current = room;
-    }, [room]);
-
-    // YTMD Listener Sync Logic
-    useEffect(() => {
-        if (!room || room.type !== 'youtube' || isHost || !ytmdListenerToken) return;
-
-        let localState = null;
-
-        const pollState = async () => {
-            try {
-                const res = await axios.get('http://localhost:9863/api/v1/state', {
-                    headers: { 'Authorization': ytmdListenerToken }
-                });
-                localState = res.data;
-            } catch (err) {
-                console.error("YTMD Listener Sync Error", err);
-                if (err.response) {
-                    console.error("YTMD API Response Error Details:", err.response.data);
-                }
-
-                if (err.response && err.response.status === 401) {
-                    setYtmdListenerToken(null);
-                    localStorage.removeItem('ytmd_listener_token');
-                }
-            }
-        };
-
-        const controlPlayer = async () => {
-            if (!localState) return;
-            const currentRoom = roomRef.current;
-            if (!currentRoom) return;
-
-            try {
-                // Sync track
-                if (currentRoom.videoId && localState.video.id !== currentRoom.videoId) {
-                    await axios.post('http://localhost:9863/api/v1/command', {
-                        command: 'changeVideo', data: { videoId: currentRoom.videoId }
-                    }, { headers: { 'Authorization': ytmdListenerToken } });
-                    localState.video.id = currentRoom.videoId;
-                    return; // Wait for next tick to adjust position
-                }
-
-                // Sync play/pause
-                const localStatus = localState.player.trackState === 1 ? 'playing' : 'paused';
-                if (currentRoom.status !== localStatus) {
-                    await axios.post('http://localhost:9863/api/v1/command', {
-                        command: currentRoom.status === 'playing' ? 'play' : 'pause'
-                    }, { headers: { 'Authorization': ytmdListenerToken } });
-                    localState.player.trackState = currentRoom.status === 'playing' ? 1 : 0;
-                }
-
-                // Sync position if desynced by > 3s
-                if (currentRoom.status === 'playing') {
-                    const localSeconds = localState.player.videoProgress;
-                    const hostSeconds = currentRoom.positionMs / 1000;
-                    if (Math.abs(localSeconds - hostSeconds) > 3) {
-                        const safeHostSeconds = Math.min(Math.floor(hostSeconds), localState.video.durationSeconds || 0);
-                        await axios.post('http://localhost:9863/api/v1/command', {
-                            command: 'seekTo', data: Math.max(0, safeHostSeconds)
-                        }, { headers: { 'Authorization': ytmdListenerToken } });
-                        localState.player.videoProgress = safeHostSeconds;
-                    }
-                }
-            } catch (err) {
-                console.error("YTMD Listener Command Error", err);
-            }
-        };
-
-        pollState(); // initial poll
-
-        const pollInterval = setInterval(pollState, 5500);
-        const controlInterval = setInterval(controlPlayer, 1500);
-
-        return () => {
-            clearInterval(pollInterval);
-            clearInterval(controlInterval);
-        };
-    }, [room?.type, isHost, ytmdListenerToken]);
-
-
-    // Spotify Listener Sync Logic
-    useEffect(() => {
-        if (!room || room.type !== 'spotify' || isHost || !spotifyListenerToken) return;
-
-        const syncSpotify = async () => {
-            const currentRoom = roomRef.current;
-            if (!currentRoom) return;
-
-            try {
-                const res = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
-                    headers: { 'Authorization': `Bearer ${spotifyListenerToken}` }
-                });
-
-                if (res.status === 401) {
-                    // Token expired
-                    setSpotifyListenerToken(null);
-                    localStorage.removeItem('spotify_listener_token');
-                    return;
-                }
-
-                let localUri = null;
-                let localStatus = 'paused';
-                let localProgress = 0;
-
-                if (res.status === 200) {
-                    const data = await res.json();
-                    if (data && data.item) {
-                        localUri = data.item.uri;
-                        localStatus = data.is_playing ? 'playing' : 'paused';
-                        localProgress = data.progress_ms;
-                    }
-                }
-
-                const headers = {
-                    'Authorization': `Bearer ${spotifyListenerToken}`,
-                    'Content-Type': 'application/json'
-                };
-
-                if (currentRoom.trackUri && localUri !== currentRoom.trackUri) {
-                    await fetch('https://api.spotify.com/v1/me/player/play', {
-                        method: 'PUT',
-                        headers,
-                        body: JSON.stringify({ uris: [currentRoom.trackUri], position_ms: currentRoom.positionMs })
-                    });
-                    return; // Next tick will handle further syncs
-                }
-
-                if (currentRoom.status !== localStatus) {
-                    if (currentRoom.status === 'playing') {
-                        await fetch('https://api.spotify.com/v1/me/player/play', { method: 'PUT', headers });
-                    } else {
-                        await fetch('https://api.spotify.com/v1/me/player/pause', { method: 'PUT', headers });
-                    }
-                }
-
-                if (currentRoom.status === 'playing') {
-                    if (Math.abs(localProgress - currentRoom.positionMs) > 3000) {
-                        await fetch(`https://api.spotify.com/v1/me/player/seek?position_ms=${currentRoom.positionMs}`, { method: 'PUT', headers });
-                    }
-                }
-
-            } catch (err) {
-                console.error("Spotify Listener Sync Error", err);
-            }
-        };
-
-        const interval = setInterval(syncSpotify, 1000);
-        return () => clearInterval(interval);
-    }, [room?.type, isHost, spotifyListenerToken]);
-
-
-    // Handlers
-    const handleSpotifyListenerLogin = () => {
-        window.location.href = `${BACKEND_URL}/spotifyLogin?joinRoom=${roomCode}`;
-    };
-
-    const handleYTMDListenerLogin = async () => {
-        try {
-            setListenerPending(true);
-            const codeRes = await axios.post('http://localhost:9863/api/v1/auth/requestcode', {
-                appId: 'listen2gether',
-                appName: 'listen2gether',
-                appVersion: '2.0.0',
-            });
-            const { code } = codeRes.data;
-
-            const tokenRes = await axios.post('http://localhost:9863/api/v1/auth/request', {
-                appId: 'listen2gether',
-                code: code,
-            });
-            const { token } = tokenRes.data;
-            localStorage.setItem('ytmd_listener_token', token);
-            setYtmdListenerToken(token);
-        } catch (err) {
-            console.error('Failed YTMD listener auth', err);
-            alert("Could not connect to YTMD. Did you approve the request inside the Desktop App? (Check the YTMD Desktop program)");
-        } finally {
-            setListenerPending(false);
-        }
-    };
-
-    if (error) {
+    if (notFound) {
         return (
             <div className="center-content">
-                <div className="glass-panel login-card">
-                    <h2>Error</h2>
-                    <p>{error}</p>
+                <div className="card stack">
+                    <h1>Room {roomCode} doesn't exist</h1>
+                    <p>It may have ended, or the code might be wrong.</p>
+                    <Link className="btn btn--primary" to="/">
+                        Back home
+                    </Link>
                 </div>
             </div>
         );
     }
 
     if (!room) {
-        return <div className="spinner"></div>;
+        return (
+            <div className="spinner-wrap">
+                <div className="spinner" role="status" aria-label="Loading room" />
+            </div>
+        );
     }
 
     return (
-        <div className="room-container glass-panel" style={{ minWidth: '400px' }}>
-            {room.albumArt ? (
-                <img src={room.albumArt} alt="Album Art" className="album-art" />
-            ) : (
-                <div className="album-art" style={{ background: '#333', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <span style={{ color: '#888' }}>No Art</span>
-                </div>
-            )}
+        <div className="center-content">
+            <AmbientBackdrop albumArt={room.albumArt} />
+            <div className="container stack" style={{ '--stack-gap': 'var(--space-5)' }}>
+                {!connected && (
+                    <div className="alert alert--error" role="status">
+                        Reconnecting…
+                    </div>
+                )}
 
-            <div className="track-info">
-                <h1 className="track-title">{room.trackName || 'Nothing Playing'}</h1>
-                <h2 className="track-artist">{room.artistName || '...'}</h2>
-
-                <div className="progress-container">
-                    {/* Fake progress bar styling for aesthetics */}
-                    <div className="progress-bar" style={{ width: room.status === 'playing' ? '100%' : '50%', transition: 'width 2s' }}></div>
+                <div className="now-playing card" aria-live="polite">
+                    <AlbumArt src={room.albumArt} alt={room.trackName ? `${room.trackName} album art` : 'No track playing'} />
+                    <h1 className="track-title">{room.trackName || 'Nothing playing'}</h1>
+                    <p className="track-artist">{room.artistName || ''}</p>
+                    <ProgressBar room={room} clockOffsetMs={clockOffsetMs} />
+                    <div className="meta-row">
+                        <StatusPill status={room.status} hostConnected={room.hostConnected} />
+                        <span>{listenerCount} connected</span>
+                        <RoomCode roomCode={roomCode} />
+                    </div>
                 </div>
+
+                {isHost ? (
+                    <div className="card stack">
+                        <p>You're broadcasting your YouTube Music playback to this room.</p>
+                        {hostError && <div className="alert alert--error">{hostError}</div>}
+                    </div>
+                ) : (
+                    <div className="card">
+                        {ytmdToken ? (
+                            <p>{syncing ? 'Synchronizing playback' : 'Connecting to YTMD…'}</p>
+                        ) : (
+                            <ConnectYtmd onConnected={setYtmdToken} />
+                        )}
+                        {listenerError && <div className="alert alert--error">{listenerError}</div>}
+                    </div>
+                )}
             </div>
-            <div style={{ opacity: 0.5, marginTop: '2rem' }}>
-                <span className={`badge ${room.status}`}>{room.status.toUpperCase()}</span>
-                &nbsp; · &nbsp; Room {room.roomCode}
-                {isHost && ' (HOST)'}
-            </div>
-
-            {/* Listener Sync UI */}
-            {!isHost && room.type === 'spotify' && !spotifyListenerToken && (
-                <button className="btn-spotify" onClick={handleSpotifyListenerLogin} style={{ marginTop: '1rem' }}>
-                    Connect Spotify to Sync Playback
-                </button>
-            )}
-
-            {!isHost && room.type === 'youtube' && !ytmdListenerToken && (
-                <button className="btn-youtube" onClick={handleYTMDListenerLogin} disabled={listenerPending} style={{ marginTop: '1rem' }}>
-                    {listenerPending ? 'Connecting...' : 'Connect YTMD to Sync Playback'}
-                </button>
-            )}
-
-            {!isHost && ((room.type === 'spotify' && spotifyListenerToken) || (room.type === 'youtube' && ytmdListenerToken)) && (
-                <div style={{ color: '#4ade80', marginTop: '1rem', fontWeight: 'bold' }}>
-                    ✓ Synchronizing playback
-                </div>
-            )}
         </div>
     );
 }
