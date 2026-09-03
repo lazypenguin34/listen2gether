@@ -1,0 +1,94 @@
+/**
+ * Reset-ish defaults, typography, focus rings, selection, and the global
+ * reduced-motion escape hatch.
+ *
+ * Outfit is loaded from index.html via <link rel="preconnect"> +
+ * <link rel="stylesheet"> — NOT an @import here, which would block first
+ * paint on this CSS file.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  background: var(--color-bg-gradient);
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+#root {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  isolation: isolate; /* keep ambient backdrop (negative z-index-ish) scoped */
+}
+
+h1, h2, h3, h4, h5, h6 {
+  margin: 0 0 var(--space-4) 0;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+p {
+  margin: 0 0 var(--space-4) 0;
+  line-height: 1.6;
+}
+
+a {
+  color: inherit;
+}
+
+img, svg {
+  display: block;
+  max-width: 100%;
+}
+
+button, input {
+  font-family: inherit;
+}
+
+/* ---- Focus ---- */
+/* Every interactive element gets a visible ring on keyboard focus only. */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ---- Selection ---- */
+::selection {
+  background: var(--accent-muted);
+  color: var(--text-primary);
+}
+
+/* ---- Reduced motion ---- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

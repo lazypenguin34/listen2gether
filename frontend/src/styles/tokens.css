@@ -1,0 +1,90 @@
+/**
+ * Design tokens — the only place literal colors/sizes/durations should live.
+ *
+ * Dark-only today, but named semantically (surface/text/accent, not
+ * "--dark-bg") so a future light theme is purely additive: a `[data-theme]`
+ * or `prefers-color-scheme` block that redefines these same names.
+ */
+
+:root {
+  /* ---- Color: surface ramp ---- */
+  --color-bg: #0a0e1a;
+  --color-bg-gradient: linear-gradient(135deg, #0a0e1a 0%, #171335 100%);
+  --surface-1: rgba(255, 255, 255, 0.05);   /* subtle panel fill */
+  --surface-2: rgba(30, 32, 55, 0.65);      /* card fill (glass) */
+  --surface-3: rgba(255, 255, 255, 0.1);    /* raised / hover fill */
+  --surface-border: rgba(255, 255, 255, 0.1);
+  --surface-blur: blur(16px);
+
+  /* ---- Color: text ---- */
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-muted: #a3adc2; /* lightened vs. old #94a3b8 so it still reads ~4.5:1 over the ambient scrim */
+
+  /* ---- Color: accent / semantic ---- */
+  --accent: #6366f1;
+  --accent-hover: #4f46e5;
+  --accent-muted: rgba(99, 102, 241, 0.18);
+
+  --brand: #ff0000;       /* YouTube red — host CTA only */
+  --brand-hover: #e60000;
+
+  --playing: #22c55e;
+  --playing-muted: rgba(34, 197, 94, 0.18);
+  --danger: #f87171;
+  --danger-muted: rgba(248, 113, 113, 0.14);
+  --offline: #94a3b8;
+  --offline-muted: rgba(148, 163, 184, 0.14);
+
+  /* ---- Space scale (4px base) ---- */
+  --space-1: 0.25rem;  /* 4px */
+  --space-2: 0.5rem;   /* 8px */
+  --space-3: 0.75rem;  /* 12px */
+  --space-4: 1rem;     /* 16px */
+  --space-5: 1.5rem;   /* 24px */
+  --space-6: 2rem;     /* 32px */
+  --space-7: 3rem;     /* 48px */
+  --space-8: 4rem;     /* 64px */
+
+  /* ---- Radius scale ---- */
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+  --radius-full: 999px;
+
+  /* ---- Shadow scale ---- */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 8px 32px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 16px 56px rgba(0, 0, 0, 0.45);
+
+  /* ---- Type scale (fluid) ---- */
+  --font-sans: 'Outfit', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --text-xs: clamp(0.72rem, 0.69rem + 0.15vw, 0.8rem);
+  --text-sm: clamp(0.82rem, 0.78rem + 0.2vw, 0.9rem);
+  --text-base: clamp(0.95rem, 0.91rem + 0.2vw, 1rem);
+  --text-lg: clamp(1.05rem, 1rem + 0.3vw, 1.25rem);
+  --text-xl: clamp(1.25rem, 1.15rem + 0.5vw, 1.5rem);
+  --text-2xl: clamp(1.5rem, 1.3rem + 1vw, 2rem);
+  --text-3xl: clamp(1.9rem, 1.6rem + 1.5vw, 2.5rem);
+  --text-4xl: clamp(2.25rem, 1.8rem + 2.2vw, 3.25rem);
+
+  /* ---- Z-index scale ---- */
+  --z-ambient: 0;
+  --z-base: 1;
+  --z-content: 10;
+  --z-overlay: 100;
+  --z-modal: 1000;
+
+  /* ---- Motion ---- */
+  --duration-fast: 150ms;
+  --duration-base: 300ms;
+  --duration-slow: 600ms;
+  --duration-ambient: 900ms; /* ambient backdrop cross-fade on track change */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+
+  /* Back-compat alias used by a couple of inline transitions */
+  --transition: all var(--duration-base) var(--ease-standard);
+}

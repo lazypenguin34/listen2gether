@@ -1,96 +1,109 @@
 import { useState } from 'react';
-import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { BACKEND_URL } from '../lib/config.js';
+import { requestToken, readStoredToken, storeToken } from '../lib/ytmd.js';
+import { storeHostSecret } from '../lib/hostSecret.js';
 
 export default function Home() {
     const navigate = useNavigate();
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState('');
+    const [hosting, setHosting] = useState(false);
+    const [hostError, setHostError] = useState(null);
     const [joinCode, setJoinCode] = useState('');
+    const [joinError, setJoinError] = useState(null);
+
+    const handleHost = async () => {
+        setHosting(true);
+        setHostError(null);
+        try {
+            const token = readStoredToken() || (await requestToken());
+            storeToken(token);
+
+            const res = await fetch(`${BACKEND_URL}/createRoom`, { method: 'POST' });
+            if (!res.ok) {
+                throw new Error(`createRoom failed (${res.status})`);
+            }
+            const { roomCode, hostSecret } = await res.json();
+
+            // Must happen before navigate(): useRoomSocket reads this key on
+            // connect to decide whether to join as host or listener.
+            storeHostSecret(roomCode, hostSecret);
+
+            navigate(`/room/${roomCode}`);
+        } catch (err) {
+            console.error('Failed to start hosting', err);
+            setHostError(
+                'Could not connect to YouTube Music Desktop. Make sure the app is running, the ' +
+                    'Companion Server is enabled in its settings, and you approve the pairing request ' +
+                    'inside the app.'
+            );
+        } finally {
+            setHosting(false);
+        }
+    };
 
     const handleJoin = (e) => {
         e.preventDefault();
-        if (joinCode.trim()) {
-            navigate(`/room/${joinCode.trim()}`);
+        const code = joinCode.trim();
+        if (!code) {
+            setJoinError('Enter a room code.');
+            return;
         }
-    };
-
-    const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8888';
-
-    const handleSpotifyLogin = () => {
-        window.location.href = `${BACKEND_URL}/spotifyLogin`;
-    };
-
-    const handleYoutubeLogin = async () => {
-        try {
-            setLoading(true);
-            setError('');
-            // 1. Request Code from YTMD
-            const codeRes = await axios.post('http://localhost:9863/api/v1/auth/requestcode', {
-                appId: 'listen2gether',
-                appName: 'listen2gether',
-                appVersion: '2.0.0',
-            });
-            const { code } = codeRes.data;
-
-            // 2. Request Token
-            // According to docs, user has to approve on YTMD interface.
-            // If it succeeds, it gives a token.
-            const tokenRes = await axios.post('http://localhost:9863/api/v1/auth/request', {
-                appId: 'listen2gether',
-                code: code,
-            });
-            const { token } = tokenRes.data;
-
-            // Save token locally
-            localStorage.setItem('ytmd_token', token);
-
-            // 3. Create Room on our Backend
-            const backendRes = await axios.post(`${BACKEND_URL}/createYTRoom`);
-            const roomCode = backendRes.data.roomCode;
-            
-            // Mark this tab as the "host" of ytmd
-            localStorage.setItem('ytmd_host_room', roomCode);
-
-            // 4. Redirect to room view
-            navigate(`/room/${roomCode}`);
-        } catch (err) {
-            console.error('YTMD Connection Error:', err);
-            setError('Failed to connect to Youtube Music Desktop Companion Server. Make sure it is running and the Companion Server is enabled.');
-        } finally {
-            setLoading(false);
-        }
+        setJoinError(null);
+        navigate(`/room/${code}`);
     };
 
     return (
         <div className="center-content">
-            <div className="glass-panel login-card">
-                <h2>Welcome to listen2gether</h2>
-                <p>Start a listening party and share your music with friends in real-time.</p>
-                
-                {error && <p style={{ color: 'var(--youtube-hover)', fontWeight: 'bold' }}>{error}</p>}
-
-                <div className="login-options">
-                    <button className="btn-spotify" onClick={handleSpotifyLogin}>
-                        Host with Spotify (Premium)
-                    </button>
-                    <button className="btn-youtube" onClick={handleYoutubeLogin} disabled={loading}>
-                        {loading ? 'Connecting...' : 'Host with YT Music Desktop'}
-                    </button>
+            <div className="card card--narrow stack">
+                <div className="stack" style={{ '--stack-gap': 'var(--space-2)' }}>
+                    <h1>listen2gether</h1>
+                    <p>Listen to YouTube Music in sync with friends, in real time.</p>
                 </div>
-                
-                <div style={{ margin: '2rem 0', opacity: 0.5 }}>— OR —</div>
-                
-                <form onSubmit={handleJoin} style={{ display: 'flex', gap: '0.5rem' }}>
-                    <input 
-                        type="text" 
-                        placeholder="Enter Room Code" 
-                        value={joinCode}
-                        onChange={(e) => setJoinCode(e.target.value)}
-                        required
-                    />
-                    <button type="submit" style={{ background: 'var(--surface-border)' }}>Join</button>
-                </form>
+
+                <div className="stack">
+                    <h2>Host a room</h2>
+                    <p>
+                        Hosting requires the{' '}
+                        <a href="https://github.com/ytmdesktop/ytmdesktop" target="_blank" rel="noreferrer">
+                            YouTube Music Desktop app
+                        </a>{' '}
+                        with its Companion Server enabled. Your local playback becomes the room's source
+                        of truth.
+                    </p>
+                    <button type="button" className="btn btn--brand" onClick={handleHost} disabled={hosting}>
+                        {hosting ? 'Connecting…' : 'Host a room'}
+                    </button>
+                    {hostError && <div className="alert alert--error">{hostError}</div>}
+                </div>
+
+                <div className="stack">
+                    <h2>Join with a code</h2>
+                    <p>
+                        Anyone can join and watch what's playing. Syncing your own playback also needs the
+                        desktop app — you'll be prompted to connect it once you're in the room.
+                    </p>
+                    <form className="stack" onSubmit={handleJoin}>
+                        <div className="field">
+                            <label htmlFor="join-code">Room code</label>
+                            <input
+                                id="join-code"
+                                className="input code-input"
+                                type="text"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                maxLength={4}
+                                autoFocus
+                                value={joinCode}
+                                onChange={(e) => setJoinCode(e.target.value)}
+                                placeholder="0000"
+                            />
+                        </div>
+                        {joinError && <div className="alert alert--error">{joinError}</div>}
+                        <button type="submit" className="btn btn--primary">
+                            Join room
+                        </button>
+                    </form>
+                </div>
             </div>
         </div>
     );
