@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { io: ioClient } = require('../../frontend/node_modules/socket.io-client');
+const { io: ioClient } = require('socket.io-client');
 const { createServer, SOCKET_EVENTS } = require('../src/index');
 
 const WAIT_TIMEOUT_MS = 3000;
